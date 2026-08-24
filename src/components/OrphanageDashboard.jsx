@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Home, ListPlus, CheckSquare, Plus, Clock, HelpCircle, UserCheck, ShieldAlert, Sparkles } from 'lucide-react';
+import { Home, ListPlus, CheckSquare, Plus, Clock, HelpCircle, UserCheck, ShieldAlert, Sparkles, AlertTriangle, Upload, CheckCircle, ShieldCheck } from 'lucide-react';
 import { getData, saveData, createRequest, updateDeliveryStatus } from '../services/db';
 import StatusTracker from './StatusTracker';
 
@@ -13,6 +13,7 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
   const [priority, setPriority] = useState('Normal');
   const [requiredDate, setRequiredDate] = useState('');
   const [description, setDescription] = useState('');
+  const [imagePreview, setImagePreview] = useState(null);
 
   // Signature states
   const [signerName, setSignerName] = useState('');
@@ -45,7 +46,7 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
     if (canvasRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
-      ctx.strokeStyle = 'var(--primary)';
+      ctx.strokeStyle = '#0d9488';
       ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
     }
@@ -57,9 +58,8 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
     const ctx = canvas.getContext('2d');
     const rect = canvas.getBoundingClientRect();
     
-    // Support mouse and touch
-    const x = (e.clientX || e.touches[0].clientX) - rect.left;
-    const y = (e.clientY || e.touches[0].clientY) - rect.top;
+    const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+    const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
     
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -73,8 +73,8 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
     const ctx = canvas.getContext('2d');
     const rect = canvas.getBoundingClientRect();
     
-    const x = (e.clientX || e.touches[0].clientX) - rect.left;
-    const y = (e.clientY || e.touches[0].clientY) - rect.top;
+    const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+    const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
     
     ctx.lineTo(x, y);
     ctx.stroke();
@@ -98,7 +98,7 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
     e.preventDefault();
 
     if (!itemName || !quantity || !requiredDate) {
-      alert("Please fill in item name, quantity, and date.");
+      alert("Please fill in item name, quantity, and required-by date.");
       return;
     }
 
@@ -108,7 +108,8 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
       quantity: parseInt(quantity),
       priority: priority,
       required_date: requiredDate,
-      description: description
+      description: description,
+      image_url: imagePreview
     };
 
     createRequest(currentOrph.id, requestData);
@@ -121,13 +122,36 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
     setItemName('');
     setQuantity('');
     setDescription('');
+    setImagePreview(null);
+    setActiveTab('incoming');
+  };
+
+  // Fast 1-Click SOS Urgent Emergency Request
+  const handleQuickSOS = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const reqDate = tomorrow.toISOString().split('T')[0];
+
+    const emergencyData = {
+      category: 'Food',
+      item_name: 'Urgent Meal Packets / Dry Ration Need',
+      quantity: currentOrph.children_count || 45,
+      priority: 'Urgent',
+      required_date: reqDate,
+      description: `EMERGENCY SOS: ${currentOrph.name} needs immediate lunch/dinner for ${currentOrph.children_count} children today due to kitchen supply deficit. Verified NGOs please respond.`
+    };
+
+    createRequest(currentOrph.id, emergencyData);
+    setRequests(getData('thunai_requests'));
+    setNotifications(getData('thunai_notifications'));
+    alert(`🚨 SOS Emergency Request for ${currentOrph.children_count} meals broadcasted to all verified NGOs!`);
     setActiveTab('incoming');
   };
 
   // Confirm receipt and release custody transition
   const handleConfirmReceipt = (delId) => {
     if (!isSigned && !signerName) {
-      alert("Please sign or enter your name to confirm receipt.");
+      alert("Please sign on the signature pad or type your name to confirm receipt.");
       return;
     }
 
@@ -141,40 +165,53 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
     // Reset signaturepad
     setIsSigned(false);
     setSignerName('');
-    alert("Donation Received successfully! Custody closed. Impact metrics updated.");
+    alert("✅ Donation Successfully Received! Custody closed. Impact metrics updated.");
   };
 
   return (
     <div className="container animate-fade-in" style={{ padding: '2rem 1.5rem' }}>
       
-      {/* Profile Overview */}
-      <div className="card-glass" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem', borderLeft: '5px solid var(--secondary)' }}>
+      {/* Profile Overview Banner */}
+      <div className="card-glass" style={{ padding: '1.75rem', borderRadius: 'var(--radius-lg)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem', borderLeft: '5px solid var(--secondary)' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--secondary)', textTransform: 'uppercase' }}>Orphanage Portal</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Orphanage Portal
+            </span>
             {isVerified ? (
-              <span className="badge badge-success" style={{ fontSize: '0.6rem', padding: '0.1rem 0.4rem', borderRadius: '4px', textTransform: 'uppercase' }}>
-                Verified Home
+              <span className="badge badge-success" style={{ fontSize: '0.65rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                <ShieldCheck size={12} /> Verified Orphanage
               </span>
             ) : (
-              <span className="badge badge-warning" style={{ fontSize: '0.6rem', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+              <span className="badge badge-warning" style={{ fontSize: '0.65rem' }}>
                 Pending Verification
               </span>
             )}
           </div>
-          <h2 style={{ fontSize: '1.75rem', marginTop: '0.25rem' }}>{currentOrph.name}</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-            📍 Location: Lat: {currentOrph.location.lat}, Lng: {currentOrph.location.lng} | Sheltering: {currentOrph.children_count} Children
+          <h2 style={{ fontSize: '1.85rem', marginTop: '0.25rem', fontFamily: 'Outfit, sans-serif' }}>{currentOrph.name}</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.35rem' }}>
+            📍 Base Coordinates: Lat: {currentOrph.location.lat}, Lng: {currentOrph.location.lng} | Sheltering: <strong>{currentOrph.children_count} Children</strong>
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--secondary)' }}>{activeRequests.length}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Active Needs</div>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--accent)' }}>{completedMatches.length}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Received Posts</div>
+        
+        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button 
+            className="btn btn-sm" 
+            style={{ backgroundColor: '#ef4444', color: 'white', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 0 15px rgba(239, 68, 68, 0.3)' }}
+            onClick={handleQuickSOS}
+          >
+            <AlertTriangle size={16} className="animate-pulse-slow" /> 1-Click SOS Food Need
+          </button>
+          
+          <div style={{ display: 'flex', gap: '1.5rem' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--secondary)', fontFamily: 'Outfit, sans-serif' }}>{activeRequests.length}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Active Needs</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--accent)', fontFamily: 'Outfit, sans-serif' }}>{completedMatches.length}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Received</div>
+            </div>
           </div>
         </div>
       </div>
@@ -196,7 +233,6 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
       {activeTab === 'incoming' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           
-          {/* List Active Requests matching current deliveries */}
           {incomingMatches.length > 0 ? (
             incomingMatches.map((matchRecord) => {
               const delivery = deliveries.find(d => d.match_id === matchRecord.id);
@@ -206,10 +242,10 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
               if (!delivery || !donation || !requestObj) return null;
 
               const ngos = getData('thunai_ngos');
-              const ngo = ngos.find(n => n.id === delivery.NGO_id) || { name: 'Assigned NGO' };
+              const ngo = ngos.find(n => n.id === delivery.NGO_id) || { name: 'CareConnect Foundation' };
 
               return (
-                <div key={matchRecord.id} className="card" style={{ padding: '1.5rem' }}>
+                <div key={matchRecord.id} className="card animate-slide-up" style={{ padding: '1.75rem' }}>
                   
                   {/* Status Visual Tracker */}
                   <StatusTracker 
@@ -224,27 +260,27 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
                     <div 
                       className="animate-slide-up"
                       style={{ 
-                        marginTop: '1.5rem', 
-                        padding: '1.5rem', 
+                        marginTop: '1.75rem', 
+                        padding: '1.75rem', 
                         backgroundColor: 'var(--primary-light)', 
-                        border: '1px solid var(--primary-border)',
+                        border: '2px solid var(--primary-border)',
                         borderRadius: 'var(--radius-md)' 
                       }}
                     >
-                      <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--primary)' }}>
-                        <Sparkles size={18} /> 🎉 Resource Arrived!
+                      <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)', fontSize: '1.25rem', fontFamily: 'Outfit, sans-serif' }}>
+                        <Sparkles size={20} /> 🎉 Donation Arrived at Your Home!
                       </h4>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                        The <strong>{matchRecord.quantity} x {donation.item_name}</strong> was delivered by <strong>{ngo.name}</strong>. Please provide a signature to confirm receipt.
+                      <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                        The <strong>{matchRecord.quantity} x {donation.item_name}</strong> was delivered by <strong>{ngo.name}</strong>. Please sign below to confirm receipt and finalize delivery.
                       </p>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginTop: '1.25rem' }}>
                         {/* Interactive Signature Canvas drawing pad */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Digital Signature Pad:</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>1. Draw Digital Signature:</span>
                           <canvas 
                             ref={canvasRef}
-                            width={280}
+                            width={320}
                             height={120}
                             className="signature-pad"
                             onMouseDown={startDrawing}
@@ -254,27 +290,30 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
                             onTouchStart={startDrawing}
                             onTouchMove={draw}
                             onTouchEnd={stopDrawing}
+                            style={{ backgroundColor: '#ffffff' }}
                           />
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Use mouse or touch to sign inside box.</span>
-                            <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 0, fontSize: '0.7rem', textDecoration: 'underline' }} onClick={clearSignature}>Clear</button>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Draw with mouse or finger inside the box.</span>
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 0, fontSize: '0.75rem', color: 'var(--danger)', textDecoration: 'underline' }} onClick={clearSignature}>
+                              Clear Signature
+                            </button>
                           </div>
                         </div>
 
                         {/* Text Cursive input option */}
                         <div className="form-group" style={{ margin: 0 }}>
-                          <label className="form-label">Or Type Signatory Full Name:</label>
+                          <label className="form-label">2. Or Type Signatory Full Name & Role:</label>
                           <input 
                             type="text" 
-                            placeholder="e.g. Sister Maria (Superintendent)" 
+                            placeholder="e.g. Sister Maria (Superintendent, Hope Home)" 
                             className="form-input" 
                             value={signerName}
                             onChange={(e) => { setSignerName(e.target.value); setIsSigned(e.target.value.length > 0); }}
                           />
                           {signerName && (
-                            <div style={{ marginTop: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.5rem', backgroundColor: 'var(--bg-secondary)', textAlign: 'center' }}>
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Cursive Preview:</span>
-                              <div style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: '1.25rem', color: 'var(--primary)', fontWeight: 'bold' }}>
+                            <div style={{ marginTop: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.75rem', backgroundColor: 'var(--bg-secondary)', textAlign: 'center' }}>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Signature Cursive Verification:</span>
+                              <div style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: '1.35rem', color: 'var(--primary)', fontWeight: 'bold' }}>
                                 {signerName}
                               </div>
                             </div>
@@ -284,7 +323,7 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
 
                       <button 
                         className="btn btn-primary" 
-                        style={{ width: '100%', marginTop: '1rem' }}
+                        style={{ width: '100%', marginTop: '1.5rem', padding: '0.9rem', fontSize: '1rem', fontWeight: 800 }}
                         onClick={() => handleConfirmReceipt(delivery.id)}
                         disabled={!isSigned}
                       >
@@ -296,11 +335,11 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
               );
             })
           ) : (
-            <div className="flex-center" style={{ flexDirection: 'column', height: '240px', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+            <div className="flex-center" style={{ flexDirection: 'column', height: '260px', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
               <Clock size={48} style={{ opacity: 0.3, marginBottom: '1rem' }} />
               <h3>No Incoming Deliveries</h3>
-              <p style={{ fontSize: '0.875rem', marginTop: '0.25rem', textAlign: 'center', maxWidth: '400px' }}>
-                There are no active transits matching your requests. Post a new resource need to trigger matching.
+              <p style={{ fontSize: '0.875rem', marginTop: '0.25rem', textAlign: 'center', maxWidth: '450px' }}>
+                There are no active shipments currently matched. Post a new resource need to trigger matching.
               </p>
             </div>
           )}
@@ -309,21 +348,19 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
 
       {/* TAB 2: REQUEST FORM */}
       {activeTab === 'request' && (
-        <div className="card" style={{ maxWidth: '600px', margin: '0 auto' }}>
-          <h3 style={{ fontSize: '1.3rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <ListPlus size={20} className="text-secondary" /> Request Resource Needs
-          </h3>
-
-          {!isVerified && (
-            <div className="card" style={{ borderLeft: '4px solid var(--danger)', backgroundColor: '#fef2f2', padding: '1rem', marginBottom: '1.5rem' }}>
-              <h4 style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-                <ShieldAlert size={16} /> Restricted Access
-              </h4>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                Your orphanage is currently pending verification. You can submit requests, but matching with verified NGOs will commence only after administrator approval.
-              </p>
-            </div>
-          )}
+        <div className="card" style={{ maxWidth: '650px', margin: '0 auto', padding: '2rem' }}>
+          
+          <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--secondary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+              “Request What You Need.”
+            </span>
+            <h3 style={{ fontSize: '1.6rem', marginTop: '0.25rem', fontFamily: 'Outfit, sans-serif' }}>
+              Post Resource Requirement
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Create a request for food, books, stationery, or supplies to be matched with donors in Trichy.
+            </p>
+          </div>
 
           <form onSubmit={handlePostRequest}>
             <div className="grid-2">
@@ -332,10 +369,13 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
                 <select className="form-select" value={category} onChange={(e) => setCategory(e.target.value)}>
                   <option value="Food">🍱 Food / Meals</option>
                   <option value="Books">📚 Books</option>
+                  <option value="School Bags">🎒 School Bags</option>
                   <option value="Stationery">✏️ Stationery Supplies</option>
                   <option value="Clothes">👕 Clothes</option>
                   <option value="Grocery">🍚 Groceries / Grains</option>
-                  <option value="Educational">🎓 Educational / Material</option>
+                  <option value="Educational">🎓 Educational / Learning Kits</option>
+                  <option value="Furniture">🪑 Furniture</option>
+                  <option value="Electronics">💻 Electronics</option>
                   <option value="Other">🧸 Other Needs</option>
                 </select>
               </div>
@@ -344,7 +384,7 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
                 <label className="form-label">Resource Item Name</label>
                 <input 
                   type="text" 
-                  placeholder="e.g. Leftover meal packets, notebooks" 
+                  placeholder="e.g. Vegetarian Lunch Packets, 192-page Notebooks" 
                   className="form-input"
                   value={itemName}
                   onChange={(e) => setItemName(e.target.value)}
@@ -358,7 +398,7 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
                 <label className="form-label">Required Quantity</label>
                 <input 
                   type="number" 
-                  placeholder="e.g. 80 packets or notebooks" 
+                  placeholder="e.g. 80 packets or units" 
                   className="form-input"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
@@ -372,7 +412,7 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
                 <select className="form-select" value={priority} onChange={(e) => setPriority(e.target.value)}>
                   <option value="Normal">🟢 Normal Priority</option>
                   <option value="Medium">🟡 Medium Urgency</option>
-                  <option value="Urgent">🔴 Urgent Needs</option>
+                  <option value="Urgent">🔴 Urgent Priority</option>
                 </select>
               </div>
             </div>
@@ -389,17 +429,17 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
             </div>
 
             <div className="form-group">
-              <label className="form-label">Description / Delivery Instructions</label>
+              <label className="form-label">Description / Specific Requirement Details</label>
               <textarea 
-                placeholder="e.g. Looking for simple vegetarian meals for lunch, or 40-page double line writing books." 
+                placeholder="e.g. Looking for nutritious vegetarian lunch packets for 45 school children and resident staff." 
                 className="form-textarea"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
 
-            <button type="submit" className="btn btn-secondary" style={{ width: '100%', marginTop: '1rem' }}>
-              POST REQUEST NEED
+            <button type="submit" className="btn btn-secondary" style={{ width: '100%', marginTop: '1.25rem', padding: '0.85rem', fontSize: '1rem' }}>
+              🏠 POST RESOURCE REQUEST
             </button>
           </form>
         </div>
@@ -412,23 +452,25 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
             completedMatches.map((m) => {
               const donation = donations.find(d => d.id === m.donation_id);
               const delivery = deliveries.find(d => d.match_id === m.id);
+              const ngo = getData('thunai_ngos').find(n => n.id === delivery?.NGO_id);
 
               return (
-                <div key={m.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: '4px solid var(--accent)', padding: '1rem 1.5rem' }}>
+                <div key={m.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: '4px solid var(--accent)', padding: '1.25rem 1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                   <div>
-                    <h4 style={{ fontSize: '1.1rem' }}>{m.quantity} x {donation?.item_name || 'Resources'}</h4>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                      Delivered by NGO | Received on: {delivery?.completed_at ? new Date(delivery.completed_at).toLocaleDateString() : 'Confirmed'}
+                    <span className="badge badge-success" style={{ fontSize: '0.65rem', marginBottom: '0.25rem' }}>Successfully Received</span>
+                    <h4 style={{ fontSize: '1.15rem', fontFamily: 'Outfit, sans-serif' }}>{m.quantity} x {donation?.item_name || 'Resources'}</h4>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                      Delivered by <strong>{ngo?.name || 'CareConnect NGO'}</strong> | Received on: {delivery?.completed_at ? new Date(delivery.completed_at).toLocaleDateString() : 'Verified'}
                     </p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--accent)', fontWeight: 700, fontSize: '0.85rem' }}>
-                    <UserCheck size={18} /> Successfully Received
+                    <UserCheck size={20} /> Receipt Recorded
                   </div>
                 </div>
               );
             })
           ) : (
-            <div className="flex-center" style={{ flexDirection: 'column', height: '200px', color: 'var(--text-muted)' }}>
+            <div className="flex-center" style={{ flexDirection: 'column', height: '220px', color: 'var(--text-muted)' }}>
               <CheckSquare size={36} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
               <p style={{ fontSize: '0.875rem' }}>No received shipments yet.</p>
             </div>
@@ -439,3 +481,4 @@ export default function OrphanageDashboard({ currentUserId, requests, setRequest
     </div>
   );
 }
+

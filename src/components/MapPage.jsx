@@ -1,433 +1,410 @@
 import React, { useState } from 'react';
-import { MapPin, Compass, Search, Filter, ShieldAlert, Award, Info, InfoIcon } from 'lucide-react';
-import { getData, getDistance, coordToPercent, MAP_CENTER } from '../services/db';
+import { MapPin, Navigation, Search, Filter, ShieldCheck, Heart, Truck, Home, AlertCircle, Info, Compass, Layers, CheckCircle } from 'lucide-react';
+import { getData, MAP_CENTER, getDistance } from '../services/db';
 
 export default function MapPage() {
-  const [distanceFilter, setDistanceFilter] = useState(10); // Default 10km radius
-  const [typeFilters, setTypeFilters] = useState({
-    donor: true,
-    ngo: true,
-    orphanage: true,
-    urgent: true
-  });
   const [selectedEntity, setSelectedEntity] = useState(null);
+  const [filterRadius, setFilterRadius] = useState(25); // km
   const [searchQuery, setSearchQuery] = useState('');
+  const [showDonors, setShowDonors] = useState(true);
+  const [showNgos, setShowNgos] = useState(true);
+  const [showOrphanages, setShowOrphanages] = useState(true);
+  const [showUrgentOnly, setShowUrgentOnly] = useState(false);
+  const [selectedMatchRoute, setSelectedMatchRoute] = useState(null);
 
   // Fetch all entities
-  const donors = getData('thunai_donations');
+  const users = getData('thunai_users');
   const ngos = getData('thunai_ngos');
   const orphanages = getData('thunai_orphanages');
-  const users = getData('thunai_users');
+  const donations = getData('thunai_donations');
+  const requests = getData('thunai_requests');
+  const matches = getData('thunai_matches');
 
-  // Format entities for unified map rendering
-  const mapEntities = [];
-
-  // 1. Add Donors
-  donors.forEach(don => {
-    const donorUser = users.find(u => u.id === don.donor_id);
-    const name = donorUser ? donorUser.name : 'Individual Donor';
-    const dist = getDistance(MAP_CENTER.lat, MAP_CENTER.lng, don.location.lat, don.location.lng);
-    const isUrgent = don.priority === 'Urgent';
-
-    mapEntities.push({
-      id: don.id,
-      name: name,
-      type: 'donor',
-      category: don.category,
-      item: don.item_name,
-      quantity: don.quantity,
-      priority: don.priority,
-      lat: don.location.lat,
-      lng: don.location.lng,
-      distance: dist,
-      details: don.description,
-      status: don.status,
-      isUrgent: isUrgent
-    });
-  });
-
-  // 2. Add NGOs
-  ngos.forEach(ngo => {
-    const dist = getDistance(MAP_CENTER.lat, MAP_CENTER.lng, ngo.location.lat, ngo.location.lng);
-    mapEntities.push({
-      id: ngo.id,
-      name: ngo.name,
-      type: 'ngo',
-      lat: ngo.location.lat,
-      lng: ngo.location.lng,
-      distance: dist,
-      details: ngo.description,
-      serviceRadius: ngo.service_radius,
-      transport: ngo.transport_type,
-      status: ngo.verification_status,
-      isUrgent: false
-    });
-  });
-
-  // 3. Add Orphanages
-  orphanages.forEach(orph => {
-    const dist = getDistance(MAP_CENTER.lat, MAP_CENTER.lng, orph.location.lat, orph.location.lng);
-    
-    // Check if orphanage has any urgent pending request
-    const requests = getData('thunai_requests');
-    const orphRequests = requests.filter(r => r.orphanage_id === orph.id && r.status !== 'Fulfilled');
-    const hasUrgent = orphRequests.some(r => r.priority === 'Urgent');
-
-    mapEntities.push({
-      id: orph.id,
-      name: orph.name,
-      type: 'orphanage',
-      lat: orph.location.lat,
-      lng: orph.location.lng,
-      distance: dist,
-      details: orph.description,
-      childrenCount: orph.children_count,
-      status: orph.verification_status,
-      isUrgent: hasUrgent,
-      requestsCount: orphRequests.length
-    });
-  });
-
-  // Filter map entities based on search, distance, and types
-  const filteredEntities = mapEntities.filter(entity => {
-    // 1. Search Query filter
-    if (searchQuery && !entity.name.toLowerCase().includes(searchQuery.toLowerCase()) && !entity.details.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-
-    // 2. Distance filter
-    if (entity.distance > distanceFilter) {
-      return false;
-    }
-
-    // 3. Type filters
-    if (entity.isUrgent && typeFilters.urgent) {
-      return true; // Keep if urgent is checked
-    }
-    return typeFilters[entity.type];
-  });
-
-  const handleToggleFilter = (key) => {
-    setTypeFilters(prev => ({ ...prev, [key]: !prev[key] }));
+  // Map Bounds for SVG coordinates translation (Trichy scope)
+  const MAP_BOUNDS = {
+    minLat: 10.7500,
+    maxLat: 10.8400,
+    minLng: 78.6500,
+    maxLng: 78.7400
   };
 
+  // Convert geo-coordinates to SVG coordinate space (800x600)
+  const projectCoordinates = (lat, lng) => {
+    const x = ((lng - MAP_BOUNDS.minLng) / (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng)) * 800;
+    const y = ((MAP_BOUNDS.maxLat - lat) / (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat)) * 600;
+    return { x: Math.max(40, Math.min(760, x)), y: Math.max(40, Math.min(560, y)) };
+  };
+
+  // Build entity markers
+  const markers = [];
+
+  // Donors
+  if (showDonors) {
+    users.filter(u => u.role === 'donor').forEach(donor => {
+      const activeDonations = donations.filter(d => d.donor_id === donor.id && d.status !== 'Confirmed');
+      const isUrgent = activeDonations.some(d => d.priority === 'Urgent');
+      if (showUrgentOnly && !isUrgent) return;
+
+      const dist = getDistance(MAP_CENTER.lat, MAP_CENTER.lng, donor.location.lat, donor.location.lng);
+      if (dist <= filterRadius) {
+        markers.push({
+          id: `donor-${donor.id}`,
+          type: 'donor',
+          name: donor.name,
+          roleTitle: 'Surplus Donor',
+          location: donor.location,
+          distance: dist,
+          isUrgent,
+          phone: donor.phone,
+          details: activeDonations.length > 0 ? `${activeDonations.length} Active Donation Offers` : 'Registered Community Donor',
+          activeItems: activeDonations,
+          color: isUrgent ? '#ef4444' : '#0284c7'
+        });
+      }
+    });
+  }
+
+  // NGOs
+  if (showNgos && !showUrgentOnly) {
+    ngos.forEach(ngo => {
+      const dist = getDistance(MAP_CENTER.lat, MAP_CENTER.lng, ngo.location.lat, ngo.location.lng);
+      if (dist <= filterRadius) {
+        markers.push({
+          id: `ngo-${ngo.id}`,
+          type: 'ngo',
+          name: ngo.name,
+          roleTitle: 'Verified NGO Coordination Bridge',
+          location: ngo.location,
+          distance: dist,
+          phone: ngo.contact,
+          details: `Fleet: ${ngo.transport_type} | Range: ${ngo.service_radius} km`,
+          verified: ngo.verification_status === 'verified',
+          color: '#10b981'
+        });
+      }
+    });
+  }
+
+  // Orphanages
+  if (showOrphanages) {
+    orphanages.forEach(orph => {
+      const activeReqs = requests.filter(r => r.orphanage_id === orph.id && r.status !== 'Fulfilled');
+      const isUrgent = activeReqs.some(r => r.priority === 'Urgent');
+      if (showUrgentOnly && !isUrgent) return;
+
+      const dist = getDistance(MAP_CENTER.lat, MAP_CENTER.lng, orph.location.lat, orph.location.lng);
+      if (dist <= filterRadius) {
+        markers.push({
+          id: `orph-${orph.id}`,
+          type: 'orphanage',
+          name: orph.name,
+          roleTitle: 'Children Orphanage Home',
+          location: orph.location,
+          distance: dist,
+          isUrgent,
+          phone: orph.contact,
+          details: `Sheltering ${orph.children_count} Children | ${activeReqs.length} Active Needs`,
+          activeItems: activeReqs,
+          verified: orph.verification_status === 'verified',
+          color: isUrgent ? '#ef4444' : '#f97316'
+        });
+      }
+    });
+  }
+
+  // Filter markers by search query
+  const filteredMarkers = markers.filter(m => 
+    m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    m.roleTitle.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Dynamic Route Line generation for active matches
+  const activeMatches = matches.filter(m => m.status !== 'Declined' && m.status !== 'Confirmed');
+
   return (
-    <div className="container animate-fade-in" style={{ padding: '2rem 1.5rem', height: 'calc(100vh - 70px)', display: 'flex', flexDirection: 'column' }}>
+    <div className="container animate-fade-in" style={{ padding: '2rem 1.5rem' }}>
       
-      {/* Search and Filters Header */}
-      <div className="card-glass" style={{ padding: '1.25rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          
-          {/* Search Box */}
-          <div style={{ flex: 1, minWidth: '240px', position: 'relative' }}>
-            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+      {/* Header Banner */}
+      <div className="card-glass" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', borderLeft: '5px solid var(--primary)' }}>
+        <div>
+          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Live Geospatial Network
+          </span>
+          <h2 style={{ fontSize: '1.85rem', marginTop: '0.25rem', fontFamily: 'Outfit, sans-serif' }}>Trichy Smart Resource Map</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+            Real-time visual routing across Donors, NGOs, and Orphanages in Tiruchirappalli, Tamil Nadu.
+          </p>
+        </div>
+
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <div style={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: '#0284c7' }} />
+            <span>Donors</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <div style={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: '#10b981' }} />
+            <span>NGO Bridges</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <div style={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: '#f97316' }} />
+            <span>Orphanages</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <div style={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: '#ef4444' }} />
+            <span>🔴 Urgent SOS</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Control Bar */}
+      <div className="card" style={{ padding: '1rem 1.5rem', marginBottom: '1.5rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1, minWidth: '280px' }}>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <Search size={16} style={{ position: 'absolute', left: '10px', top: '11px', color: 'var(--text-muted)' }} />
             <input 
               type="text" 
-              placeholder="Search NGOs, Orphanages, or resources..." 
-              className="form-input" 
-              style={{ paddingLeft: '2.5rem' }} 
+              placeholder="Search donor, NGO, or orphanage name..." 
+              className="form-input"
+              style={{ paddingLeft: '32px' }}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+        </div>
 
-          {/* Distance Filter Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Distance:</span>
-            <select 
-              className="form-select" 
-              style={{ width: '130px', padding: '0.5rem' }}
-              value={distanceFilter}
-              onChange={(e) => setDistanceFilter(parseInt(e.target.value))}
-            >
-              <option value={2}>Within 2 km</option>
-              <option value={5}>Within 5 km</option>
-              <option value={10}>Within 10 km</option>
-              <option value={25}>Within 25 km</option>
-            </select>
-          </div>
+        {/* Distance Range Slider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '220px' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Distance Radius:</span>
+          <select className="form-select" value={filterRadius} onChange={(e) => setFilterRadius(parseInt(e.target.value))} style={{ width: 'auto', padding: '0.4rem 0.8rem' }}>
+            <option value="2">Within 2 km</option>
+            <option value="5">Within 5 km</option>
+            <option value="10">Within 10 km</option>
+            <option value="25">Entire Trichy (25 km)</option>
+          </select>
+        </div>
 
-          {/* Type Checkboxes */}
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
-              <input type="checkbox" checked={typeFilters.donor} onChange={() => handleToggleFilter('donor')} className="form-checkbox" />
-              <span className="badge badge-info" style={{ textTransform: 'capitalize' }}>🔵 Donors</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
-              <input type="checkbox" checked={typeFilters.ngo} onChange={() => handleToggleFilter('ngo')} className="form-checkbox" />
-              <span className="badge badge-success" style={{ textTransform: 'capitalize' }}>🟢 NGOs</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
-              <input type="checkbox" checked={typeFilters.orphanage} onChange={() => handleToggleFilter('orphanage')} className="form-checkbox" />
-              <span className="badge badge-warning" style={{ textTransform: 'capitalize' }}>🟠 Orphanages</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
-              <input type="checkbox" checked={typeFilters.urgent} onChange={() => handleToggleFilter('urgent')} className="form-checkbox" />
-              <span className="badge badge-danger" style={{ textTransform: 'capitalize' }}>🔴 Urgent Needs</span>
-            </label>
-          </div>
-
+        {/* Type Toggles */}
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+            <input type="checkbox" checked={showDonors} onChange={(e) => setShowDonors(e.target.checked)} className="form-checkbox" />
+            <span>Donors</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+            <input type="checkbox" checked={showNgos} onChange={(e) => setShowNgos(e.target.checked)} className="form-checkbox" />
+            <span>NGOs</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+            <input type="checkbox" checked={showOrphanages} onChange={(e) => setShowOrphanages(e.target.checked)} className="form-checkbox" />
+            <span>Orphanages</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', color: 'var(--danger)', fontWeight: 700 }}>
+            <input type="checkbox" checked={showUrgentOnly} onChange={(e) => setShowUrgentOnly(e.target.checked)} className="form-checkbox" />
+            <span>Urgent Only</span>
+          </label>
         </div>
       </div>
 
-      {/* Main Map Split Screen */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1.5rem', minHeight: 0 }}>
+      {/* Main Map View Container */}
+      <div style={{ position: 'relative', width: '100%', height: '580px', borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-tertiary)' }}>
         
-        {/* Sidebar Nearest Entities list */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', padding: '1rem', overflowY: 'auto' }}>
-          <h3 style={{ fontSize: '1.1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Compass size={18} /> Nearby Locations ({filteredEntities.length})
-          </h3>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
-            {filteredEntities.map((entity) => (
-              <div 
-                key={entity.id} 
-                className="card" 
-                style={{ 
-                  padding: '0.75rem', 
-                  borderRadius: 'var(--radius-sm)', 
-                  cursor: 'pointer',
-                  border: selectedEntity?.id === entity.id ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                  backgroundColor: selectedEntity?.id === entity.id ? 'var(--primary-light)' : 'var(--bg-secondary)'
-                }}
-                onClick={() => setSelectedEntity(entity)}
+        {/* SVG Interactive Map */}
+        <svg 
+          viewBox="0 0 800 600" 
+          style={{ width: '100%', height: '100%', background: 'radial-gradient(circle at center, rgba(13,148,136,0.08) 0%, rgba(15,23,42,0.03) 100%)' }}
+        >
+          <defs>
+            {/* Grid Pattern */}
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--border-color)" strokeWidth="0.75" opacity="0.6" />
+            </pattern>
+            {/* Animated Pulse Filter */}
+            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+
+          <rect width="800" height="600" fill="url(#grid)" />
+
+          {/* Kaveri River Ribbon Landmark */}
+          <path 
+            d="M 0,160 Q 200,190 400,170 T 800,140" 
+            fill="none" 
+            stroke="rgba(56, 189, 248, 0.45)" 
+            strokeWidth="28" 
+            strokeLinecap="round"
+          />
+          <text x="320" y="165" fill="#0284c7" fontSize="11" fontWeight="700" letterSpacing="2" opacity="0.8">
+            KAVERI RIVER (TRICHY)
+          </text>
+
+          {/* Landmark Labels */}
+          <g opacity="0.6" fontSize="11" fontWeight="600" fill="var(--text-muted)">
+            <text x="440" y="240">🏛️ Rockfort Hill</text>
+            <text x="210" y="320">📍 Thillai Nagar</text>
+            <text x="380" y="380">🏢 Cantonment Central</text>
+            <text x="590" y="360">🏭 Kailasapuram / BHEL</text>
+            <text x="430" y="490">🌳 K K Nagar</text>
+          </g>
+
+          {/* Active Delivery Route Lines */}
+          {activeMatches.map((m, idx) => {
+            const don = donations.find(d => d.id === m.donation_id);
+            const ngo = ngos.find(n => n.id === m.NGO_id);
+            const orph = orphanages.find(o => o.id === m.orphanage_id);
+
+            if (!don || !ngo || !orph) return null;
+
+            const pDon = projectCoordinates(don.location.lat, don.location.lng);
+            const pNgo = projectCoordinates(ngo.location.lat, ngo.location.lng);
+            const pOrph = projectCoordinates(orph.location.lat, orph.location.lng);
+
+            return (
+              <g key={m.id || idx}>
+                {/* Donor to NGO line */}
+                <line 
+                  x1={pDon.x} 
+                  y1={pDon.y} 
+                  x2={pNgo.x} 
+                  y2={pNgo.y} 
+                  stroke="#0284c7" 
+                  strokeWidth="2" 
+                  strokeDasharray="4,4"
+                  opacity="0.75"
+                />
+                {/* NGO to Orphanage line */}
+                <line 
+                  x1={pNgo.x} 
+                  y1={pNgo.y} 
+                  x2={pOrph.x} 
+                  y2={pOrph.y} 
+                  stroke="#10b981" 
+                  strokeWidth="2.5" 
+                  strokeDasharray="5,5"
+                  opacity="0.85"
+                />
+              </g>
+            );
+          })}
+
+          {/* Interactive Entity Markers */}
+          {filteredMarkers.map((m) => {
+            const { x, y } = projectCoordinates(m.location.lat, m.location.lng);
+            const isSelected = selectedEntity?.id === m.id;
+
+            return (
+              <g 
+                key={m.id} 
+                transform={`translate(${x}, ${y})`} 
+                onClick={() => setSelectedEntity(m)}
+                style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
               >
-                <div className="flex-between">
-                  <span style={{ 
-                    fontWeight: 700, 
-                    fontSize: '0.85rem',
-                    color: entity.isUrgent ? 'var(--danger)' : 'var(--text-primary)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    maxWidth: '180px'
-                  }}>
-                    {entity.name}
-                  </span>
-                  <span className="text-muted" style={{ fontSize: '0.7rem', fontWeight: 600 }}>
-                    📍 {entity.distance} km
-                  </span>
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem' }}>
-                  {entity.isUrgent && <span className="badge badge-danger" style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem' }}>Urgent</span>}
-                  <span style={{ 
-                    fontSize: '0.7rem', 
-                    fontWeight: 700, 
-                    textTransform: 'uppercase',
-                    color: entity.type === 'donor' ? 'var(--info)' : entity.type === 'ngo' ? 'var(--accent)' : 'var(--secondary)' 
-                  }}>
-                    {entity.type}
-                  </span>
-                </div>
-              </div>
-            ))}
+                {/* Outer Glow / Halo */}
+                {m.isUrgent ? (
+                  <circle r="22" fill="#ef4444" opacity="0.25" className="animate-pulse-slow" />
+                ) : isSelected ? (
+                  <circle r="20" fill={m.color} opacity="0.3" />
+                ) : null}
 
-            {filteredEntities.length === 0 && (
-              <div className="flex-center" style={{ flex: 1, flexDirection: 'column', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem 0' }}>
-                <MapPin size={36} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
-                <p style={{ fontSize: '0.8rem' }}>No results match filters within {distanceFilter} km.</p>
-              </div>
-            )}
-          </div>
-        </div>
+                {/* Main Pin Circle */}
+                <circle 
+                  r={isSelected ? "14" : "11"} 
+                  fill={m.color} 
+                  stroke="#ffffff" 
+                  strokeWidth="2.5"
+                  filter={m.isUrgent ? "url(#glow)" : undefined}
+                />
 
-        {/* Map Display area */}
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-          
-          <div className="map-canvas" style={{ flex: 1, minHeight: '400px' }}>
-            
-            {/* Custom SVG Map Background Drawing */}
-            <svg 
-              viewBox="0 0 100 100" 
-              preserveAspectRatio="none" 
-              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}
-            >
-              <defs>
-                <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-                  <path d="M 10 0 L 0 0 0 10" fill="none" stroke="var(--border-color)" strokeWidth="0.15" />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#grid)" />
-              
-              {/* Kaveri River flowing through top (approx y=20) */}
-              <path 
-                d="M 0,22 Q 25,25 50,18 T 100,20" 
-                fill="none" 
-                stroke="#93c5fd" 
-                strokeWidth="2.5" 
-                strokeLinecap="round" 
-                style={{ opacity: 0.8 }}
-              />
-              
-              {/* River Kollidam branching off */}
-              <path 
-                d="M 45,19 Q 70,14 100,10" 
-                fill="none" 
-                stroke="#bfdbfe" 
-                strokeWidth="1.8" 
-                style={{ opacity: 0.6 }}
-              />
+                {/* Icon Glyph */}
+                <text 
+                  x="0" 
+                  y="4" 
+                  textAnchor="middle" 
+                  fill="#ffffff" 
+                  fontSize="9" 
+                  fontWeight="bold" 
+                  pointerEvents="none"
+                >
+                  {m.type === 'donor' ? 'D' : m.type === 'ngo' ? 'N' : 'O'}
+                </text>
 
-              {/* Main highways crossing */}
-              <line x1="0" y1="50" x2="100" y2="50" stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="1,1" /> {/* National Highway */}
-              <line x1="50" y1="0" x2="50" y2="100" stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="1,1" />
+                {/* Quick Title Label */}
+                <text 
+                  x="0" 
+                  y="26" 
+                  textAnchor="middle" 
+                  fill="var(--text-primary)" 
+                  fontSize="11" 
+                  fontWeight="700" 
+                  style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
+                >
+                  {m.name.length > 18 ? m.name.substring(0, 18) + '...' : m.name}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
 
-              {/* Transit Bypass Loop Road (circular layout approximation) */}
-              <circle cx="50" cy="50" r="35" fill="none" stroke="var(--border-color)" strokeWidth="0.3" strokeDasharray="2,2" />
-
-              {/* Geographic labels */}
-              <text x="35" y="16" fill="var(--text-muted)" fontSize="2" fontWeight="700">KAVERI RIVER</text>
-              <text x="52" y="47" fill="var(--text-muted)" fontSize="2" fontWeight="700">ROCKFORT HILL</text>
-              <text x="43" y="78" fill="var(--text-muted)" fontSize="2" fontWeight="700">TRICHY JUNCTION</text>
-            </svg>
-
-            {/* Map Center Marker */}
-            <div 
-              style={{ 
-                position: 'absolute', 
-                left: '50%', 
-                top: '50%', 
-                transform: 'translate(-50%, -50%)',
-                zIndex: 5,
-                textAlign: 'center'
-              }}
-            >
-              <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--primary)', border: '2px solid white', boxShadow: '0 0 10px var(--primary)' }} />
-              <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', fontWeight: 800, marginTop: '2px', backgroundColor: 'var(--bg-secondary)', padding: '1px 3px', borderRadius: '3px', border: '1px solid var(--border-color)' }}>
-                Trichy Center
-              </div>
+        {/* Selected Entity Details Popover Card */}
+        {selectedEntity && (
+          <div 
+            className="card animate-slide-up" 
+            style={{ 
+              position: 'absolute', 
+              bottom: '20px', 
+              right: '20px', 
+              maxWidth: '360px', 
+              width: '100%',
+              padding: '1.5rem', 
+              boxShadow: 'var(--shadow-xl)',
+              borderLeft: `5px solid ${selectedEntity.color}`,
+              zIndex: 100
+            }}
+          >
+            <div className="flex-between" style={{ marginBottom: '0.5rem' }}>
+              <span className="badge" style={{ backgroundColor: selectedEntity.color, color: 'white', fontSize: '0.65rem' }}>
+                {selectedEntity.roleTitle}
+              </span>
+              <button 
+                className="btn btn-ghost btn-sm" 
+                style={{ padding: '0 0.4rem', fontSize: '1rem' }}
+                onClick={() => setSelectedEntity(null)}
+              >
+                ✕
+              </button>
             </div>
 
-            {/* Entity Pin Markers */}
-            {filteredEntities.map((entity) => {
-              const pos = coordToPercent(entity.lat, entity.lng);
-              const isSelected = selectedEntity?.id === entity.id;
+            <h3 style={{ fontSize: '1.2rem', fontFamily: 'Outfit, sans-serif', marginTop: '0.25rem' }}>
+              {selectedEntity.name}
+            </h3>
+            
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+              {selectedEntity.details}
+            </p>
 
-              return (
-                <div 
-                  key={entity.id} 
-                  className={`map-marker ${entity.isUrgent ? 'urgent' : entity.type}`}
-                  style={{ 
-                    left: `${pos.x}%`, 
-                    top: `${pos.y}%`, 
-                    zIndex: isSelected ? 30 : 10
-                  }}
-                  onClick={() => setSelectedEntity(entity)}
-                >
-                  {/* Pin Dot */}
-                  <div className="map-marker-pin" style={{
-                    transform: isSelected ? 'rotate(-45deg) scale(1.2)' : 'rotate(-45deg)',
-                    boxShadow: isSelected ? '0 0 15px currentColor' : '0 4px 6px rgba(0,0,0,0.15)'
-                  }} />
-                  
-                  {/* Small Label underneath */}
-                  <div style={{ 
-                    fontSize: '0.55rem', 
-                    fontWeight: 700, 
-                    backgroundColor: 'var(--bg-secondary)', 
-                    color: 'var(--text-primary)',
-                    padding: '1px 4px', 
-                    borderRadius: '4px', 
-                    border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-                    whiteSpace: 'nowrap',
-                    position: 'absolute',
-                    top: '100%',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    marginTop: '2px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                  }}>
-                    {entity.name.split(' ')[0]}
-                  </div>
-                </div>
-              );
-            })}
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <div>📍 Coordinates: Lat: {selectedEntity.location.lat}, Lng: {selectedEntity.location.lng}</div>
+              <div>📏 Distance from Trichy Center: <strong>{selectedEntity.distance} km</strong></div>
+              <div>📞 Contact: <strong>{selectedEntity.phone}</strong></div>
+            </div>
 
-            {/* Floating Detail Card Popover */}
-            {selectedEntity && (
-              <div 
-                className="card animate-slide-up" 
-                style={{ 
-                  position: 'absolute', 
-                  bottom: '16px', 
-                  left: '16px', 
-                  right: '16px', 
-                  zIndex: 40,
-                  margin: 0,
-                  boxShadow: '0 15px 30px rgba(0,0,0,0.2)',
-                  borderLeft: `5px solid ${selectedEntity.isUrgent ? 'var(--danger)' : selectedEntity.type === 'donor' ? 'var(--info)' : selectedEntity.type === 'ngo' ? 'var(--accent)' : 'var(--secondary)'}`
-                }}
-              >
-                <div className="flex-between" style={{ marginBottom: '0.5rem' }}>
-                  <div>
-                    <span className="badge badge-neutral" style={{ fontSize: '0.6rem', padding: '0.15rem 0.5rem', marginBottom: '0.25rem', marginRight: '0.5rem' }}>
-                      {selectedEntity.type.toUpperCase()}
-                    </span>
-                    {selectedEntity.isUrgent && <span className="badge badge-danger" style={{ fontSize: '0.6rem', padding: '0.15rem 0.5rem' }}>Urgent</span>}
-                    <h4 style={{ fontSize: '1rem', marginTop: '0.25rem' }}>{selectedEntity.name}</h4>
-                  </div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setSelectedEntity(null)} style={{ padding: '0.25rem' }}>
-                    ✕
-                  </button>
-                </div>
-
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: '1.4' }}>
-                  {selectedEntity.details}
-                </p>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem' }}>
-                  <div>
-                    <strong>Distance from Center:</strong>
-                    <div>{selectedEntity.distance} km away</div>
-                  </div>
-                  {selectedEntity.type === 'donor' && (
-                    <>
-                      <div>
-                        <strong>Resource Available:</strong>
-                        <div>{selectedEntity.quantity} x {selectedEntity.item}</div>
-                      </div>
-                      <div>
-                        <strong>Custody Status:</strong>
-                        <div style={{ color: 'var(--primary)', fontWeight: 600 }}>{selectedEntity.status}</div>
-                      </div>
-                    </>
-                  )}
-                  {selectedEntity.type === 'ngo' && (
-                    <>
-                      <div>
-                        <strong>Service Area Radius:</strong>
-                        <div>{selectedEntity.serviceRadius} km max</div>
-                      </div>
-                      <div>
-                        <strong>Transport Fleet:</strong>
-                        <div>🚐 {selectedEntity.transport}</div>
-                      </div>
-                    </>
-                  )}
-                  {selectedEntity.type === 'orphanage' && (
-                    <>
-                      <div>
-                        <strong>Children Sheltered:</strong>
-                        <div>{selectedEntity.childrenCount} children</div>
-                      </div>
-                      <div>
-                        <strong>Active Requests:</strong>
-                        <div style={{ color: 'var(--secondary)', fontWeight: 600 }}>{selectedEntity.requestsCount} Needs pending</div>
-                      </div>
-                    </>
-                  )}
-                </div>
+            {selectedEntity.activeItems && selectedEntity.activeItems.length > 0 && (
+              <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>Active Listings:</span>
+                <ul style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', paddingLeft: '1.2rem', marginTop: '0.25rem' }}>
+                  {selectedEntity.activeItems.slice(0, 3).map((item, idx) => (
+                    <li key={idx}>
+                      {item.quantity || item.required_quantity} x {item.item_name} ({item.priority})
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
-
           </div>
-
-        </div>
+        )}
 
       </div>
-
     </div>
   );
 }
