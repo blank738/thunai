@@ -114,7 +114,7 @@ export default function App() {
                 width: '42px',
                 height: '42px',
                 borderRadius: 'var(--radius-md)',
-                background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)',
+                background: '#0D9488',
                 color: 'white',
                 display: 'flex',
                 alignItems: 'center',
