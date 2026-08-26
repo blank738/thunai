@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Compass, Bell, Sun, Moon, Users, LogIn, UserPlus, Heart, MapPin, Gift, HandHelping, HomeIcon, Truck, ShieldCheck, ChevronDown, CheckCircle2, Shield, LogOut } from 'lucide-react';
+import { Compass, Bell, Sun, Moon, Users, LogIn, UserPlus, Heart, MapPin, Gift, Handshake, HomeIcon, Truck, ShieldCheck, ChevronDown, CheckCircle2, Shield, LogOut } from 'lucide-react';
 import { initDB, getData } from './services/db';
 import Home from './components/Home';
 import MapPage from './components/MapPage';
@@ -376,7 +376,7 @@ export default function App() {
           <span>Donor</span>
         </button>
         <button className={`mobile-nav-item btn-ghost ${page === 'profile' && role === 'orphanage' ? 'active' : ''}`} onClick={() => { setRole('orphanage'); setPage('profile'); }}>
-          <HandHelping size={20} />
+          <Handshake size={20} />
           <span>Orphanage</span>
         </button>
         <button className={`mobile-nav-item btn-ghost ${page === 'profile' && role === 'ngo' ? 'active' : ''}`} onClick={() => { setRole('ngo'); setPage('profile'); }}>

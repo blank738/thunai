@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  Gift, HandHelping, BookOpen, Heart, Globe, Play, CheckCircle2, ChevronRight, 
+  Gift, Handshake, BookOpen, Heart, Globe, Play, CheckCircle2, ChevronRight, 
   AlertCircle, ArrowRight, ShieldCheck, Award, Sparkles, Truck, Clock, MapPin, 
   TrendingUp, Users, Shield, RefreshCw, HelpCircle, ChevronDown, ChevronUp, Leaf, 
   Compass, Share2, Check, AlertTriangle, FileText, LogIn
@@ -206,10 +206,10 @@ export default function Home({ setRole, setPage, stats, setStats, notifications,
           </h1>
 
           <div style={{ fontSize: '1.65rem', fontWeight: 800, marginBottom: '1.25rem', fontFamily: 'Outfit, sans-serif' }}>
-            <span className="text-gradient-secondary">Connect. </span>
-            <span className="text-gradient-primary">Collect. </span>
-            <span className="text-gradient-accent">Deliver. </span>
-            <span style={{ color: 'var(--text-primary)' }}>Hope.</span>
+            <span className="text-gradient-secondary">Connect 💠 </span>
+            <span className="text-gradient-primary">Collect 💠 </span>
+            <span className="text-gradient-accent">Deliver 💠 </span>
+            <span style={{ color: 'var(--text-primary)' }}>Hope</span>
           </div>
 
           <p style={{ fontSize: '1.18rem', color: 'var(--text-secondary)', maxWidth: '780px', margin: '0 auto 2.5rem auto', lineHeight: '1.7' }}>
@@ -235,7 +235,7 @@ export default function Home({ setRole, setPage, stats, setStats, notifications,
             <div className="hero-action-card" onClick={() => { setRole('orphanage'); setPage('profile'); }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', backgroundColor: 'var(--secondary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)' }}>
-                  <HandHelping size={24} />
+                  <Handshake size={24} />
                 </div>
                 <ArrowRight size={18} className="text-secondary" />
               </div>
@@ -1009,7 +1009,7 @@ export default function Home({ setRole, setPage, stats, setStats, notifications,
               <Gift size={20} /> “Give What You Can.”
             </button>
             <button className="btn btn-secondary" style={{ padding: '1rem 2rem', fontSize: '1.05rem' }} onClick={() => { setRole('orphanage'); setPage('profile'); }}>
-              <HandHelping size={20} /> “Request What You Need.”
+              <Handshake size={20} /> “Request What You Need.”
             </button>
             <button className="btn btn-outline" style={{ padding: '1rem 2rem', fontSize: '1.05rem' }} onClick={() => { setRole('ngo'); setPage('profile'); }}>
               <Truck size={20} /> “Help Deliver Hope.”
